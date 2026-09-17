@@ -1,4 +1,10 @@
-import type { Recording, Site, StudyState } from "../domain/models";
+import type {
+  ImportBatch,
+  Recording,
+  Site,
+  StudyState,
+} from "../domain/models";
+import { DEFAULT_RETENTION_POLICY, emptyTombstones } from "../domain/retention";
 
 const stamp = "2026-09-08T09:00:00.000Z";
 const recordings: Recording[] = [
@@ -207,8 +213,46 @@ const recordings: Recording[] = [
     isFeatured: false,
     tags: ["park", "wind", "play"],
     color: "#597b8e",
+    importBatchId: "batch-workshop",
     createdAt: stamp,
     updatedAt: stamp,
+  },
+];
+
+const EARLY_IMPORT_IDS = [
+  "rec-underpass",
+  "rec-market",
+  "rec-tram",
+  "rec-courtyard",
+  "rec-drain",
+];
+recordings.forEach((recording) => {
+  if (!recording.importBatchId) {
+    recording.importBatchId = EARLY_IMPORT_IDS.includes(recording.id)
+      ? "batch-summer"
+      : "batch-workshop";
+  }
+});
+
+const importBatches: ImportBatch[] = [
+  {
+    id: "batch-summer",
+    label: "Summer listening intake",
+    source: "Field recorder archive",
+    note: "June neighbourhood sweep imported before catalog review.",
+    status: "completed",
+    recordingIds: EARLY_IMPORT_IDS,
+    createdAt: stamp,
+    completedAt: stamp,
+  },
+  {
+    id: "batch-workshop",
+    label: "July supplement",
+    source: "Contributor shared drives",
+    note: "Late clips awaiting transcript and consent confirmation.",
+    status: "open",
+    recordingIds: ["rec-workshop", "rec-bus", "rec-park"],
+    createdAt: stamp,
   },
 ];
 const sites: Site[] = [
@@ -225,6 +269,7 @@ const sites: Site[] = [
     color: "#d7654e",
     sequence: 0,
     recordingIds: ["rec-underpass"],
+    updatedAt: stamp,
   },
   {
     id: "site-rhythm",
@@ -239,6 +284,7 @@ const sites: Site[] = [
     color: "#7c6aa6",
     sequence: 1,
     recordingIds: ["rec-market", "rec-tram"],
+    updatedAt: stamp,
   },
   {
     id: "site-voices",
@@ -253,6 +299,7 @@ const sites: Site[] = [
     color: "#2f7c75",
     sequence: 2,
     recordingIds: ["rec-courtyard"],
+    updatedAt: stamp,
   },
   {
     id: "site-return",
@@ -266,11 +313,12 @@ const sites: Site[] = [
     color: "#597b8e",
     sequence: 3,
     recordingIds: ["rec-bus"],
+    updatedAt: stamp,
   },
 ];
 export function createSeedStudy(): StudyState {
   return structuredClone({
-    version: 2,
+    version: 3,
     revision: 0,
     updatedAt: stamp,
     project: {
@@ -311,6 +359,11 @@ export function createSeedStudy(): StudyState {
         updatedAt: stamp,
       },
     ],
+    importBatches,
+    retentionPolicies: DEFAULT_RETENTION_POLICY,
+    retentionIndex: {},
+    tombstoneIndex: emptyTombstones(),
+    releaseLineage: [],
     preferences: { pace: "steady", accessPriority: 70, listenerCount: 6 },
     auditLog: [],
     release: null,

@@ -8,6 +8,11 @@ import type {
 } from "./models";
 import { createId } from "./ids";
 import { releaseFingerprint } from "./releaseIdentity";
+import {
+  danglingArchivedReferenceIds,
+  unqualifiedRecordingIds,
+  unqualifiedSiteIds,
+} from "./retention";
 export function evaluateRelease(
   state: StudyState,
   analysis: RouteAnalysis,
@@ -35,6 +40,21 @@ export function evaluateRelease(
   if (analysis.roleCoverage < 1)
     blockers.push(
       "The route should include arrival, texture, voice, and departure signals.",
+    );
+  const unqualifiedClips = unqualifiedRecordingIds(state);
+  if (unqualifiedClips.length)
+    blockers.push(
+      `${unqualifiedClips.length} restored clip${unqualifiedClips.length === 1 ? "" : "s"} must be requalified before release.`,
+    );
+  const unqualifiedSites = unqualifiedSiteIds(state);
+  if (unqualifiedSites.length)
+    blockers.push(
+      `${unqualifiedSites.length} restored site${unqualifiedSites.length === 1 ? "" : "s"} must be requalified before release.`,
+    );
+  const archivedReferences = danglingArchivedReferenceIds(state);
+  if (archivedReferences.length)
+    blockers.push(
+      `${archivedReferences.length} route reference${archivedReferences.length === 1 ? "" : "s"} resolve to cleaned clips; restore or replace them before release.`,
     );
   if (analysis.warningCount)
     cautions.push(

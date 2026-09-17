@@ -284,6 +284,7 @@ function RecordingEditor({
 }) {
   const [draft, setDraft] = useState(initial);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const { state } = useStudy();
   const update = <K extends keyof RecordingDraft>(
     key: K,
     value: RecordingDraft[K],
@@ -434,6 +435,18 @@ function RecordingEditor({
           <option value="pending">Pending</option>
           <option value="confirmed">Confirmed</option>
           <option value="restricted">Restricted</option>
+        </SelectField>
+        <SelectField
+          label="Import batch"
+          value={draft.importBatchId}
+          onChange={(event) => update("importBatchId", event.target.value)}
+        >
+          <option value="">No import batch</option>
+          {state.importBatches.map((batch) => (
+            <option key={batch.id} value={batch.id}>
+              {batch.label} ({batch.status})
+            </option>
+          ))}
         </SelectField>
         <TextField
           label="Tags"

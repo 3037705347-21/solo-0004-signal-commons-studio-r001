@@ -1,5 +1,6 @@
 import {
   AlertTriangle,
+  Archive,
   ArrowDown,
   ArrowUp,
   CheckCircle2,
@@ -31,7 +32,7 @@ import {
   formatPercent,
   titleCase,
 } from "../../domain/formatters";
-import type { Recording, Site } from "../../domain/models";
+import type { Recording, Site, StudyState } from "../../domain/models";
 import { useStudy } from "../../state/StudyContext";
 
 export function RoutePage() {
@@ -139,6 +140,7 @@ export function RoutePage() {
                   site={site}
                   index={index}
                   recordings={state.recordings}
+                  vaultedRecordings={state.tombstoneIndex.recordings}
                   analysis={analysis.sites.find(
                     (item) => item.siteId === site.id,
                   )}
@@ -244,6 +246,7 @@ function SiteLane({
   site,
   index,
   recordings,
+  vaultedRecordings,
   analysis,
   selectedRecording,
   onSelect,
@@ -254,6 +257,7 @@ function SiteLane({
   site: Site;
   index: number;
   recordings: Recording[];
+  vaultedRecordings: StudyState["tombstoneIndex"]["recordings"];
   analysis?: ReturnType<typeof analyzeRoute>["sites"][number];
   selectedRecording: string | null;
   onSelect?: (id: string | null) => void;
@@ -267,6 +271,11 @@ function SiteLane({
   );
   const placed = site.recordingIds
     .map((id) => recordingMap.get(id))
+    .filter((recording): recording is Recording => Boolean(recording));
+  // Placements that now resolve only to the archive vault are shown as ghosts
+  // so custodians can see which references survive cleanup.
+  const vaultedPlacements = site.recordingIds
+    .map((id) => vaultedRecordings[id]?.recording)
     .filter((recording): recording is Recording => Boolean(recording));
   const selected = selectedRecording
     ? recordingMap.get(selectedRecording)
@@ -353,6 +362,18 @@ function SiteLane({
               </div>
             </div>
           ))}
+          {vaultedPlacements.map((recording) => (
+            <div className="placement-item placement-vaulted" key={`vault-${recording.id}`}>
+              <Archive size={15} className="drag-handle" />
+              <RecordingGlyph color={recording.color} size="small" />
+              <div className="placement-info">
+                <strong>{recording.title}</strong>
+                <span>
+                  {recording.catalogId} · archived clip reference preserved
+                </span>
+              </div>
+            </div>
+          ))}
           {selected && !site.recordingIds.includes(selected.id) && (
             <button
               className="drop-target"
@@ -361,7 +382,7 @@ function SiteLane({
               <Plus size={15} /> Place <strong>{selected.title}</strong> here
             </button>
           )}
-          {placed.length === 0 && !selected && (
+          {placed.length === 0 && vaultedPlacements.length === 0 && !selected && (
             <div className="site-empty">
               Select a clip from the queue to place it here.
             </div>

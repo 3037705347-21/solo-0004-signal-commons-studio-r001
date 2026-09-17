@@ -30,6 +30,10 @@ export interface Recording {
   isFeatured: boolean;
   tags: string[];
   color: string;
+  importBatchId?: string;
+  archivedAt?: string;
+  restoredAt?: string;
+  requalifiedAt?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -46,6 +50,52 @@ export interface Site {
   color: string;
   sequence: number;
   recordingIds: string[];
+  updatedAt?: string;
+  archivedAt?: string;
+  restoredAt?: string;
+  requalifiedAt?: string;
+}
+
+export type ImportBatchStatus = "open" | "completed";
+
+export interface ImportBatch {
+  id: string;
+  label: string;
+  source: string;
+  note: string;
+  status: ImportBatchStatus;
+  recordingIds: string[];
+  createdAt: string;
+  completedAt?: string;
+  archivedAt?: string;
+  restoredAt?: string;
+  requalifiedAt?: string;
+}
+
+export type RetentionCategory = "release" | "import" | "site";
+export type RetentionStatus = "active" | "expired" | "archived";
+
+export interface RetentionPolicy {
+  releaseDays: number;
+  importOpenDays: number;
+  importCompletedDays: number;
+  siteDays: number;
+  restoreGraceDays: number;
+}
+
+export interface RetentionEntry {
+  key: string;
+  category: RetentionCategory;
+  id: string;
+  label: string;
+  retainedFrom: string;
+  retainedUntil: string;
+  status: RetentionStatus;
+  archivedAt?: string;
+  restoredAt?: string;
+  requalifiedAt?: string;
+  requalificationRequired: boolean;
+  policyDays: number;
 }
 
 export interface QualityIssue {
@@ -92,17 +142,53 @@ export interface CommandLogEntry {
 }
 
 export interface StudyState {
-  version: 2;
+  version: 3;
   revision: number;
   updatedAt: string;
   project: FieldStudy;
   recordings: Recording[];
   sites: Site[];
   issues: QualityIssue[];
+  importBatches: ImportBatch[];
+  retentionPolicies: RetentionPolicy;
+  tombstoneIndex: TombstoneIndex;
+  releaseLineage: ReleaseRecord[];
   preferences: RoutePreferences;
   auditLog: CommandLogEntry[];
   release: ReleaseRecord | null;
   lastSavedAt?: string;
+}
+
+export interface ArchivedRecording {
+  recording: Recording;
+  siteIds: string[];
+  issueIds: string[];
+  archivedAt: string;
+}
+
+export interface ArchivedSite {
+  site: Site;
+  recordingIds: string[];
+  issueIds: string[];
+  archivedAt: string;
+}
+
+export interface ArchivedImportBatch {
+  batch: ImportBatch;
+  recordingIds: string[];
+  archivedAt: string;
+}
+
+export interface ArchivedRelease {
+  release: ReleaseRecord;
+  archivedAt: string;
+}
+
+export interface TombstoneIndex {
+  recordings: Record<string, ArchivedRecording>;
+  sites: Record<string, ArchivedSite>;
+  importBatches: Record<string, ArchivedImportBatch>;
+  releases: Record<string, ArchivedRelease>;
 }
 
 export interface RecordingDraft {
@@ -124,6 +210,7 @@ export interface RecordingDraft {
   isFeatured: boolean;
   tags: string;
   color: string;
+  importBatchId: string;
 }
 
 export interface IssueDraft {
@@ -204,6 +291,9 @@ export interface ReleaseRecord {
   supersedes?: string;
   readiness: ReleaseResult;
   snapshot?: Snapshot;
+  archivedAt?: string;
+  restoredAt?: string;
+  requalifiedAt?: string;
 }
 
 export interface Snapshot {

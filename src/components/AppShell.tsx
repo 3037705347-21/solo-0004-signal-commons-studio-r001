@@ -10,6 +10,7 @@ import {
   Settings2,
   Sparkles,
   SunMedium,
+  TimerReset,
 } from "lucide-react";
 import { NavLink, useLocation } from "react-router-dom";
 import { useStudy } from "../state/StudyContext";
@@ -40,6 +41,12 @@ const navigation = [
     label: "Scenario lab",
     icon: Gauge,
     detail: "Field planning",
+  },
+  {
+    to: "/retention",
+    label: "Retention desk",
+    icon: TimerReset,
+    detail: "Policy & archive",
   },
 ];
 

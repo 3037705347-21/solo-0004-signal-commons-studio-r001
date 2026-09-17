@@ -6,6 +6,8 @@ import {
   Clock,
   Download,
   FileWarning,
+  GitBranch,
+  History,
   ListChecks,
   MapPin,
   Plus,
@@ -231,6 +233,7 @@ export function QualityPage() {
           ))}
         </section>
       )}
+      <ReleaseLineageCard />
       <div className="review-summary">
         <div>
           <span className="eyebrow">TOTAL FINDINGS</span>
@@ -404,7 +407,10 @@ function SiteChecklistCard({
               <span className="checklist-sequence">{entry.sequence}</span>
               <span className="checklist-clip">
                 <strong>{entry.title}</strong>
-                <small>{entry.catalogId}</small>
+                <small>
+                  {entry.catalogId}
+                  {entry.archived && " · archived clip"}
+                </small>
               </span>
               <span className="checklist-duration">
                 <Clock size={13} />
@@ -529,6 +535,63 @@ function IssueRow({
         {resultLabel}
       </Button>
     </article>
+  );
+}
+
+function ReleaseLineageCard() {
+  const { state } = useStudy();
+  const releases = [
+    ...state.releaseLineage,
+    ...(state.release ? [state.release] : []),
+  ]
+    .slice()
+    .sort((left, right) => right.sequence - left.sequence);
+  if (releases.length === 0) return null;
+  return (
+    <section className="retention-live-card" aria-label="Release lineage">
+      <div className="panel-heading">
+        <div>
+          <div className="eyebrow">PUBLISHED VERSION LINEAGE</div>
+          <h2>Frozen releases</h2>
+        </div>
+        <GitBranch size={19} />
+      </div>
+      <div className="retention-table">
+        {releases.map((release) => (
+          <article className="retention-row" key={release.id}>
+            <div className="retention-row-icon">
+              <History size={17} />
+            </div>
+            <div className="retention-row-main">
+              <div className="retention-row-title">
+                <h3>Release #{release.sequence}</h3>
+                <Badge
+                  tone={
+                    release.status === "ready"
+                      ? "positive"
+                      : release.status === "stale"
+                        ? "warning"
+                        : "neutral"
+                  }
+                >
+                  {titleCase(release.status)}
+                </Badge>
+                {state.release?.id === release.id && (
+                  <Badge tone="info">Current</Badge>
+                )}
+              </div>
+              <div className="retention-row-meta">
+                <span>
+                  <Clock size={13} /> {formatDate(release.createdAt)}
+                </span>
+                <span>revision {release.revision}</span>
+                {release.supersedes && <span>supersedes prior release</span>}
+              </div>
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
   );
 }
 

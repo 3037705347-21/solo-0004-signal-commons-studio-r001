@@ -1,5 +1,6 @@
 import { analyzeRoute, getUnplacedRecordings } from "../domain/routeAnalysis";
 import { issueProgress } from "../domain/releaseRules";
+import { resolveRecording, resolveSite } from "../domain/retention";
 import type {
   Recording,
   QualityIssue,
@@ -11,14 +12,14 @@ export function selectRecordingById(
   state: StudyState,
   id: string,
 ): Recording | undefined {
-  return state.recordings.find((recording) => recording.id === id);
+  return resolveRecording(state, id);
 }
 
 export function selectSiteById(
   state: StudyState,
   id: string,
 ): Site | undefined {
-  return state.sites.find((site) => site.id === id);
+  return resolveSite(state, id)?.site;
 }
 
 export function selectRecordingSite(

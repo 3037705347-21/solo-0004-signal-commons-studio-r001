@@ -1,16 +1,24 @@
 import type {
   AudioSpec,
+  ArchivedImportBatch,
+  ArchivedRecording,
+  ArchivedRelease,
+  ArchivedSite,
   CommandLogEntry,
+  ImportBatch,
   QualityIssue,
   Recording,
   ReleaseRecord,
   ReleaseResult,
+  RetentionPolicy,
   RoutePreferences,
   Site,
   Snapshot,
   StudyState,
+  TombstoneIndex,
 } from "../domain/models";
 import { releaseFingerprint } from "../domain/releaseIdentity";
+import { DEFAULT_RETENTION_POLICY, emptyTombstones } from "../domain/retention";
 
 const PROJECT_STAGES = new Set(["draft", "review", "ready"]);
 const SIGNAL_ROLES = new Set(["arrival", "texture", "voice", "departure"]);
@@ -28,6 +36,10 @@ function isRecord(value: unknown): value is UnknownRecord {
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
+}
+
+function isOptionalNonEmptyString(value: unknown): value is string | undefined {
+  return value === undefined || isNonEmptyString(value);
 }
 
 function isPositiveNumber(value: unknown): value is number {
@@ -70,6 +82,10 @@ function isRecording(value: unknown): value is Recording {
     Array.isArray(value.tags) &&
     value.tags.every((tag) => typeof tag === "string") &&
     typeof value.color === "string" &&
+    isOptionalNonEmptyString(value.importBatchId) &&
+    isOptionalNonEmptyString(value.archivedAt) &&
+    isOptionalNonEmptyString(value.restoredAt) &&
+    isOptionalNonEmptyString(value.requalifiedAt) &&
     isNonEmptyString(value.createdAt) &&
     isNonEmptyString(value.updatedAt)
   );
@@ -90,7 +106,11 @@ function isSite(value: unknown): value is Site {
     typeof value.color === "string" &&
     Number.isInteger(value.sequence) &&
     Array.isArray(value.recordingIds) &&
-    value.recordingIds.every((id) => typeof id === "string")
+    value.recordingIds.every((id) => typeof id === "string") &&
+    isOptionalNonEmptyString(value.updatedAt) &&
+    isOptionalNonEmptyString(value.archivedAt) &&
+    isOptionalNonEmptyString(value.restoredAt) &&
+    isOptionalNonEmptyString(value.requalifiedAt)
   );
 }
 
@@ -251,10 +271,23 @@ function migrateRelease(value: unknown): ReleaseRecord | null {
       : undefined,
     readiness: value.readiness,
     snapshot,
+    archivedAt: isNonEmptyString(value.archivedAt)
+      ? value.archivedAt
+      : undefined,
+    restoredAt: isNonEmptyString(value.restoredAt)
+      ? value.restoredAt
+      : undefined,
+    requalifiedAt: isNonEmptyString(value.requalifiedAt)
+      ? value.requalifiedAt
+      : undefined,
   };
 }
 
-function migratedUpdatedAt(state: StudyState): string {
+function migratedUpdatedAt(state: {
+  project: StudyState["project"];
+  recordings: Recording[];
+  issues: QualityIssue[];
+}): string {
   const timestamps = [
     state.project.lastReadinessCheck,
     ...state.recordings.map((recording) => recording.updatedAt),
@@ -268,9 +301,155 @@ function migratedUpdatedAt(state: StudyState): string {
     : "1970-01-01T00:00:00.000Z";
 }
 
+function isImportBatch(value: unknown): value is ImportBatch {
+  if (!isRecord(value)) return false;
+  return (
+    isNonEmptyString(value.id) &&
+    isNonEmptyString(value.label) &&
+    typeof value.source === "string" &&
+    typeof value.note === "string" &&
+    (value.status === "open" || value.status === "completed") &&
+    Array.isArray(value.recordingIds) &&
+    value.recordingIds.every((id) => typeof id === "string") &&
+    isNonEmptyString(value.createdAt) &&
+    isOptionalNonEmptyString(value.completedAt) &&
+    isOptionalNonEmptyString(value.archivedAt) &&
+    isOptionalNonEmptyString(value.restoredAt) &&
+    isOptionalNonEmptyString(value.requalifiedAt)
+  );
+}
+
+function isPositiveInteger(value: unknown): boolean {
+  return Number.isInteger(value) && Number(value) > 0;
+}
+
+function isRetentionPolicy(value: unknown): value is RetentionPolicy {
+  if (!isRecord(value)) return false;
+  return (
+    isPositiveInteger(value.releaseDays) &&
+    isPositiveInteger(value.importOpenDays) &&
+    isPositiveInteger(value.importCompletedDays) &&
+    isPositiveInteger(value.siteDays) &&
+    isPositiveInteger(value.restoreGraceDays)
+  );
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return (
+    Array.isArray(value) && value.every((id) => typeof id === "string")
+  );
+}
+
+function isArchivedRecording(value: unknown): value is ArchivedRecording {
+  if (!isRecord(value)) return false;
+  return (
+    isRecording(value.recording) &&
+    isStringArray(value.siteIds) &&
+    isStringArray(value.issueIds) &&
+    isNonEmptyString(value.archivedAt)
+  );
+}
+
+function isArchivedSite(value: unknown): value is ArchivedSite {
+  if (!isRecord(value)) return false;
+  return (
+    isSite(value.site) &&
+    isStringArray(value.recordingIds) &&
+    isStringArray(value.issueIds) &&
+    isNonEmptyString(value.archivedAt)
+  );
+}
+
+function isArchivedImportBatch(value: unknown): value is ArchivedImportBatch {
+  if (!isRecord(value)) return false;
+  return (
+    isImportBatch(value.batch) &&
+    isStringArray(value.recordingIds) &&
+    isNonEmptyString(value.archivedAt)
+  );
+}
+
+function isArchivedRelease(value: unknown): value is ArchivedRelease {
+  if (!isRecord(value)) return false;
+  return (
+    migrateRelease(value.release) !== null &&
+    isNonEmptyString(value.archivedAt)
+  );
+}
+
+function isBucket<T>(
+  value: unknown,
+  validate: (entry: unknown) => entry is T,
+): value is Record<string, T> {
+  if (!isRecord(value)) return false;
+  return Object.values(value).every(validate);
+}
+
+function isTombstoneIndex(value: unknown): value is TombstoneIndex {
+  if (!isRecord(value)) return false;
+  return (
+    isBucket(value.recordings, isArchivedRecording) &&
+    isBucket(value.sites, isArchivedSite) &&
+    isBucket(value.importBatches, isArchivedImportBatch) &&
+    isBucket(value.releases, isArchivedRelease)
+  );
+}
+
+interface LegacyShape {
+  project: StudyState["project"];
+  recordings: Recording[];
+  sites: Site[];
+  issues: QualityIssue[];
+  preferences: RoutePreferences;
+  auditLog: CommandLogEntry[];
+  release: ReleaseRecord | null;
+}
+
+function migrateLegacy(value: UnknownRecord, fromVersion: 1 | 2): StudyState | null {
+  const auditLog =
+    fromVersion === 2 && Array.isArray(value.auditLog)
+      ? value.auditLog
+          .map(migrateAuditEntry)
+          .filter((entry): entry is CommandLogEntry => Boolean(entry))
+      : [];
+  const legacy: LegacyShape = {
+    project: value.project as StudyState["project"],
+    recordings: value.recordings as Recording[],
+    sites: value.sites as Site[],
+    issues: value.issues as QualityIssue[],
+    preferences: value.preferences as RoutePreferences,
+    auditLog,
+    release: migrateRelease(value.release ?? null),
+  };
+  return {
+    version: 3,
+    revision: fromVersion === 2 ? Number(value.revision) : 0,
+    updatedAt:
+      fromVersion === 2 && isNonEmptyString(value.updatedAt)
+        ? value.updatedAt
+        : migratedUpdatedAt(legacy),
+    project: legacy.project,
+    recordings: legacy.recordings,
+    sites: legacy.sites,
+    issues: legacy.issues,
+    importBatches: [],
+    retentionPolicies: DEFAULT_RETENTION_POLICY,
+    tombstoneIndex: emptyTombstones(),
+    preferences: legacy.preferences,
+    auditLog: legacy.auditLog,
+    release: legacy.release,
+    releaseLineage: [],
+    lastSavedAt:
+      fromVersion === 2 && isNonEmptyString(value.lastSavedAt)
+        ? value.lastSavedAt
+        : undefined,
+  };
+}
+
 export function migrateWorkspace(value: unknown): StudyState | null {
   if (!isRecord(value)) return null;
-  if (value.version !== 1 && value.version !== 2) return null;
+  if (value.version !== 1 && value.version !== 2 && value.version !== 3)
+    return null;
   if (!isProject(value.project)) return null;
   if (!Array.isArray(value.recordings) || !value.recordings.every(isRecording))
     return null;
@@ -278,26 +457,20 @@ export function migrateWorkspace(value: unknown): StudyState | null {
   if (!Array.isArray(value.issues) || !value.issues.every(isIssue)) return null;
   if (!isPreferences(value.preferences)) return null;
 
-  if (value.version === 1) {
-    const legacy: StudyState = {
-      version: 2,
-      revision: 0,
-      updatedAt: "",
-      project: value.project,
-      recordings: value.recordings,
-      sites: value.sites,
-      issues: value.issues,
-      preferences: value.preferences,
-      auditLog: [],
-      release: null,
-    };
-    return {
-      ...legacy,
-      updatedAt: migratedUpdatedAt(legacy),
-    };
+  if (value.version === 1 || value.version === 2) {
+    return migrateLegacy(value, value.version);
   }
 
   if (!Number.isInteger(value.revision) || Number(value.revision) < 0)
+    return null;
+  if (!Array.isArray(value.importBatches) || !value.importBatches.every(isImportBatch))
+    return null;
+  if (!isRetentionPolicy(value.retentionPolicies)) return null;
+  if (!isTombstoneIndex(value.tombstoneIndex)) return null;
+  if (
+    !Array.isArray(value.releaseLineage) ||
+    !value.releaseLineage.every((entry) => migrateRelease(entry) !== null)
+  )
     return null;
   const auditLog = Array.isArray(value.auditLog)
     ? value.auditLog
@@ -305,7 +478,7 @@ export function migrateWorkspace(value: unknown): StudyState | null {
         .filter((entry): entry is CommandLogEntry => Boolean(entry))
     : [];
   return {
-    version: 2,
+    version: 3,
     revision: Number(value.revision),
     updatedAt: isNonEmptyString(value.updatedAt)
       ? value.updatedAt
@@ -314,9 +487,15 @@ export function migrateWorkspace(value: unknown): StudyState | null {
     recordings: value.recordings,
     sites: value.sites,
     issues: value.issues,
+    importBatches: value.importBatches,
+    retentionPolicies: value.retentionPolicies,
+    tombstoneIndex: value.tombstoneIndex,
+    releaseLineage: value.releaseLineage
+      .map((entry) => migrateRelease(entry))
+      .filter((entry): entry is ReleaseRecord => Boolean(entry)),
     preferences: value.preferences,
     auditLog,
-    release: migrateRelease(value.release),
+    release: migrateRelease(value.release ?? null),
     lastSavedAt: isNonEmptyString(value.lastSavedAt)
       ? value.lastSavedAt
       : undefined,
@@ -324,25 +503,43 @@ export function migrateWorkspace(value: unknown): StudyState | null {
 }
 
 export function validateReferences(state: StudyState): StudyState {
-  const recordingIds = new Set(
+  const archivedRecordingIds = new Set(
+    Object.keys(state.tombstoneIndex.recordings),
+  );
+  const archivedSiteIds = new Set(Object.keys(state.tombstoneIndex.sites));
+  const liveRecordingIds = new Set(
     state.recordings.map((recording) => recording.id),
   );
-  const siteIds = new Set(state.sites.map((site) => site.id));
+  const liveSiteIds = new Set(state.sites.map((site) => site.id));
+
+  // References may point at live records or cleaned (archived) records; both
+  // still resolve. Only truly unknown targets are repaired.
+  const resolvableRecordingIds = new Set([
+    ...liveRecordingIds,
+    ...archivedRecordingIds,
+  ]);
+  const resolvableSiteIds = new Set([...liveSiteIds, ...archivedSiteIds]);
+
   const placedRecordingIds = new Set<string>();
-  const sites = state.sites.map((site) => ({
-    ...site,
-    recordingIds: site.recordingIds.filter((id) => {
-      if (!recordingIds.has(id) || placedRecordingIds.has(id)) return false;
+  const sites = state.sites.map((site) => {
+    const recordingIds = site.recordingIds.filter((id) => {
+      if (!resolvableRecordingIds.has(id) || placedRecordingIds.has(id))
+        return false;
       placedRecordingIds.add(id);
       return true;
-    }),
-  }));
+    });
+    return recordingIds.length === site.recordingIds.length
+      ? site
+      : { ...site, recordingIds };
+  });
   const issues = state.issues.map((issue) => ({
     ...issue,
     siteId:
-      issue.siteId && siteIds.has(issue.siteId) ? issue.siteId : undefined,
+      issue.siteId && resolvableSiteIds.has(issue.siteId)
+        ? issue.siteId
+        : undefined,
     recordingId:
-      issue.recordingId && recordingIds.has(issue.recordingId)
+      issue.recordingId && resolvableRecordingIds.has(issue.recordingId)
         ? issue.recordingId
         : undefined,
   }));

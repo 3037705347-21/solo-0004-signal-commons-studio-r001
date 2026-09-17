@@ -2,8 +2,11 @@ import type {
   Recording,
   IssueStatus,
   ReleaseRecord,
+  RetentionCategory,
+  RetentionPolicy,
   RoutePreferences,
   QualityIssue,
+  ImportBatch,
   StudyState,
 } from "../domain/models";
 
@@ -39,6 +42,24 @@ type StudyActionPayload =
     }
   | { type: "preferences/update"; preferences: RoutePreferences }
   | { type: "project/readiness"; release: ReleaseRecord }
+  | { type: "import/create"; batch: ImportBatch }
+  | { type: "import/complete"; batchId: string }
+  | { type: "retention/policy"; policy: RetentionPolicy }
+  | {
+      type: "retention/archive";
+      category: RetentionCategory;
+      id: string;
+    }
+  | {
+      type: "retention/restore";
+      category: RetentionCategory;
+      id: string;
+    }
+  | {
+      type: "retention/requalify";
+      category: RetentionCategory;
+      id: string;
+    }
   | { type: "workspace/reset"; state: StudyState }
   | { type: "workspace/sync"; state: StudyState };
 

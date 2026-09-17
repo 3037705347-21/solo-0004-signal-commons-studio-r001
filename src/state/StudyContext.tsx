@@ -20,11 +20,17 @@ import {
   evaluateRelease,
   isReleaseCurrent,
 } from "../domain/releaseRules";
+import {
+  retentionOverview,
+  type RetentionOverview,
+} from "../domain/retention";
 import type {
   Recording,
   RecordingDraft,
   IssueDraft,
   IssueStatus,
+  RetentionCategory,
+  RetentionPolicy,
   RoutePreferences,
   ReleaseResult,
   Snapshot,
@@ -42,9 +48,17 @@ interface CommandResult<T = undefined> {
   message?: string;
 }
 
+export interface ImportBatchDraft {
+  label: string;
+  source: string;
+  note: string;
+  recordingIds: string[];
+}
+
 interface StudyContextValue {
   state: StudyState;
   storageHealthy: boolean;
+  retention: RetentionOverview;
   upsertRecording: (
     draft: RecordingDraft,
     existing?: Recording,
@@ -65,6 +79,15 @@ interface StudyContextValue {
   updatePreferences: (preferences: RoutePreferences) => void;
   checkReadiness: () => ReleaseResult;
   createSnapshot: () => CommandResult<Snapshot>;
+  createImportBatch: (draft: ImportBatchDraft) => CommandResult;
+  completeImportBatch: (batchId: string) => CommandResult;
+  updateRetentionPolicy: (policy: RetentionPolicy) => CommandResult;
+  archiveMaterial: (category: RetentionCategory, id: string) => CommandResult;
+  restoreMaterial: (category: RetentionCategory, id: string) => CommandResult;
+  requalifyMaterial: (
+    category: RetentionCategory,
+    id: string,
+  ) => CommandResult;
   resetStudy: () => void;
 }
 
@@ -111,6 +134,22 @@ export function StudyProvider({ children }: { children: ReactNode }) {
       return { ...action, meta };
     },
     [originId, state.revision],
+  );
+
+  const runGuarded = useCallback(
+    (build: () => StudyAction): CommandResult => {
+      try {
+        dispatch(withCommandMeta(build()));
+        return { ok: true };
+      } catch (error) {
+        return {
+          ok: false,
+          message:
+            error instanceof Error ? error.message : "Action could not complete.",
+        };
+      }
+    },
+    [withCommandMeta],
   );
 
   const upsertRecording = useCallback(
@@ -285,6 +324,62 @@ export function StudyProvider({ children }: { children: ReactNode }) {
     };
   }, [state]);
 
+  const createImportBatch = useCallback(
+    (draft: ImportBatchDraft): CommandResult => {
+      if (!draft.label.trim())
+        return { ok: false, errors: { label: "A batch label is required." } };
+      if (!draft.recordingIds.length)
+        return {
+          ok: false,
+          message: "Select at least one clip for the import batch.",
+        };
+      const now = new Date().toISOString();
+      return runGuarded(() => ({
+        type: "import/create",
+        batch: {
+          id: createId("import"),
+          label: draft.label.trim(),
+          source: draft.source.trim(),
+          note: draft.note.trim(),
+          status: "open",
+          recordingIds: draft.recordingIds,
+          createdAt: now,
+        },
+      }));
+    },
+    [runGuarded],
+  );
+
+  const completeImportBatch = useCallback(
+    (batchId: string) =>
+      runGuarded(() => ({ type: "import/complete", batchId })),
+    [runGuarded],
+  );
+
+  const updateRetentionPolicy = useCallback(
+    (policy: RetentionPolicy): CommandResult =>
+      runGuarded(() => ({ type: "retention/policy", policy })),
+    [runGuarded],
+  );
+
+  const archiveMaterial = useCallback(
+    (category: RetentionCategory, id: string) =>
+      runGuarded(() => ({ type: "retention/archive", category, id })),
+    [runGuarded],
+  );
+
+  const restoreMaterial = useCallback(
+    (category: RetentionCategory, id: string) =>
+      runGuarded(() => ({ type: "retention/restore", category, id })),
+    [runGuarded],
+  );
+
+  const requalifyMaterial = useCallback(
+    (category: RetentionCategory, id: string) =>
+      runGuarded(() => ({ type: "retention/requalify", category, id })),
+    [runGuarded],
+  );
+
   const resetStudy = useCallback(
     () =>
       dispatch(
@@ -296,10 +391,13 @@ export function StudyProvider({ children }: { children: ReactNode }) {
     [withCommandMeta],
   );
 
+  const retention = useMemo(() => retentionOverview(state), [state]);
+
   const value = useMemo<StudyContextValue>(
     () => ({
       state,
       storageHealthy,
+      retention,
       upsertRecording,
       removeRecording,
       assignRecording,
@@ -310,11 +408,18 @@ export function StudyProvider({ children }: { children: ReactNode }) {
       updatePreferences,
       checkReadiness,
       createSnapshot,
+      createImportBatch,
+      completeImportBatch,
+      updateRetentionPolicy,
+      archiveMaterial,
+      restoreMaterial,
+      requalifyMaterial,
       resetStudy,
     }),
     [
       state,
       storageHealthy,
+      retention,
       upsertRecording,
       removeRecording,
       assignRecording,
@@ -325,6 +430,12 @@ export function StudyProvider({ children }: { children: ReactNode }) {
       updatePreferences,
       checkReadiness,
       createSnapshot,
+      createImportBatch,
+      completeImportBatch,
+      updateRetentionPolicy,
+      archiveMaterial,
+      restoreMaterial,
+      requalifyMaterial,
       resetStudy,
     ],
   );

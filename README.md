@@ -22,19 +22,21 @@ npm run check
 
 ## Directory structure
 
-- `src/domain`: recording models and validation, route analysis, review transitions, release rules, checklist serialization, and listener projections.
+- `src/domain`: recording models and validation, route analysis, review transitions, release rules, checklist serialization, retention policy and archive lifecycle, and listener projections.
 - `src/state`: typed commands, revision guards, reducer, versioned migrations, audit log, cross-tab synchronization, checksummed persistence, seed study, and undo history.
 - `src/features/library`: searchable signal library and validated recording editor.
 - `src/features/route`: listening-site planning, placement transitions, and constraint feedback.
 - `src/features/quality`: evidence finding lifecycle, site field checklists, release gate, and snapshot export.
 - `src/features/scenarios`: non-mutating listener scenario controls and derived metrics.
+- `src/features/retention`: per-class retention ledger and policy, import batch intake, archive vault, restore and requalification.
 - `src/components`: shared shell, navigation, forms, badges, metrics, dialogs, and visual primitives.
 
 ## Inputs and outputs
 
-- Recording entries accept a catalogue ID, title, recorder or source, recording date, file format, capture location, audio specification, signal role, sensitivity, transcript status, consent status, tags, and listening summary.
+- Recording entries accept a catalogue ID, title, recorder or source, recording date, file format, capture location, audio specification, signal role, sensitivity, transcript status, consent status, tags, import batch assignment, and listening summary.
 - Quality findings accept severity, owner, optional site or clip links, and decision context.
+- The retention desk accepts per-class windows (published releases, open imports, completed imports, sites, restore guidance) and archive, restore, or requalify commands for releases, import batches, and sites.
 - A successful release check enables a JSON file named `signal-commons-snapshot-YYYY-MM-DD.json` containing the study, recordings, listening sites, summary metrics, and unresolved non-blocking findings.
 - Selecting a listening site on the quality desk shows a field recording checklist that can be downloaded as CSV.
 
-State-changing page actions call typed workspace commands. Commands validate at the boundary, enforce route capacity, carry revision guards, dispatch reducer events, and persist a checksummed recoverable record. Repeated commands are idempotent, stale revisions are rejected, and committed changes synchronize across tabs. Readiness checks freeze a revision, deterministic study fingerprint, and release lineage; later changes mark the frozen release stale. Derived route and scenario analysis is pure and recalculates without mutating saved data.
+State-changing page actions call typed workspace commands. Commands validate at the boundary, enforce route capacity, carry revision guards, dispatch reducer events, and persist a checksummed recoverable record. Repeated commands are idempotent, stale revisions are rejected, and committed changes synchronize across tabs. Readiness checks freeze a revision, deterministic study fingerprint, and release lineage; later changes mark the frozen release stale. Retention standings are derived from the executable policy: expired material archives into a tombstone vault that keeps releases, import batches, placements, and findings resolving to cleaned objects; restored objects regain a fresh retention window but must be requalified before publication. Derived route and scenario analysis is pure and recalculates without mutating saved data.

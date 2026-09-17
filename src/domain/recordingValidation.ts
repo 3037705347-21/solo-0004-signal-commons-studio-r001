@@ -102,6 +102,9 @@ export function recordingFromDraft(
       .map((tag) => tag.trim())
       .filter(Boolean),
     color: draft.color,
+    importBatchId: draft.importBatchId.trim() || undefined,
+    restoredAt: existing?.restoredAt,
+    requalifiedAt: existing?.requalifiedAt,
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
   };
@@ -127,6 +130,7 @@ export function draftFromRecording(recording: Recording): RecordingDraft {
     isFeatured: recording.isFeatured,
     tags: recording.tags.join(", "),
     color: recording.color,
+    importBatchId: recording.importBatchId ?? "",
   };
 }
 
@@ -149,4 +153,5 @@ export const emptyRecordingDraft: RecordingDraft = {
   isFeatured: false,
   tags: "",
   color: "#2f7c75",
+  importBatchId: "",
 };

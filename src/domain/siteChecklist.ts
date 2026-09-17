@@ -16,6 +16,7 @@ export interface SiteChecklistEntry {
   catalogId: string;
   title: string;
   durationSeconds: number;
+  archived: boolean;
   unresolvedFindings: ChecklistFinding[];
 }
 
@@ -44,9 +45,15 @@ export function buildSiteChecklist(
   );
   if (!site) return null;
 
+  // Resolve clips from the live library and the archive vault, so a site
+  // checklist produced after cleanup still lists every referenced clip.
   const recordingById = new Map(
     state.recordings.map((recording) => [recording.id, recording]),
   );
+  Object.values(state.tombstoneIndex.recordings).forEach((archived) => {
+    if (!recordingById.has(archived.recording.id))
+      recordingById.set(archived.recording.id, archived.recording);
+  });
   const unresolved = state.issues.filter(
     (issue) => issue.status !== "resolved",
   );
@@ -87,6 +94,9 @@ export function buildSiteChecklist(
         catalogId: recording.catalogId,
         title: recording.title,
         durationSeconds: recording.audioSpec.durationSeconds,
+        archived: Boolean(
+          state.tombstoneIndex.recordings[recording.id],
+        ),
         unresolvedFindings: [...recordingFindings, ...siteFindings],
       };
     })
@@ -155,7 +165,7 @@ export function serializeSiteChecklistCsv(checklist: SiteChecklist): string {
     lines.push(
       [
         entry.sequence,
-        entry.catalogId,
+        entry.catalogId + (entry.archived ? " [archived]" : ""),
         entry.title,
         entry.durationSeconds,
         findings,

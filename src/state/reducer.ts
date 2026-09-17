@@ -1,12 +1,21 @@
 import { createId } from "../domain/ids";
 import { canPlaceRecording } from "../domain/routeAnalysis";
+import {
+  archiveRetained,
+  completeImportBatch,
+  requalifyRetained,
+  restoreRetained,
+} from "../domain/retentionLifecycle";
 import { compactLog, makeLogEntry } from "../domain/studyLog";
 import {
   regressReadyProject,
   transitionIssue,
   transitionProject,
 } from "../domain/transitions";
-import type { StudyState } from "../domain/models";
+import type {
+  RetentionCategory,
+  StudyState,
+} from "../domain/models";
 import type { StudyAction } from "./actions";
 
 const AUDIT_LOG_LIMIT = 80;
@@ -86,16 +95,14 @@ function mutate(
   state: StudyState,
   action: StudyAction,
   next: StudyState,
+  options: { invalidate?: boolean } = {},
 ): StudyState {
   if (next === state) return state;
   const disposition = commandDisposition(state, action);
   if (disposition === "duplicate") return state;
   if (disposition === "conflict") return rejectCommand(state, action);
-  return finalizeAction(
-    invalidateRelease(next),
-    action,
-    state.revision + 1,
-  );
+  const finalized = finalizeAction(next, action, state.revision + 1);
+  return options.invalidate === false ? finalized : invalidateRelease(finalized);
 }
 
 function applyReadinessStage(
@@ -120,12 +127,18 @@ function removeRecordingFromSites(
   state: StudyState,
   recordingId: string,
 ): StudyState {
+  const timestamp = new Date().toISOString();
   return {
     ...state,
-    sites: state.sites.map((site) => ({
-      ...site,
-      recordingIds: site.recordingIds.filter((id) => id !== recordingId),
-    })),
+    sites: state.sites.map((site) =>
+      site.recordingIds.includes(recordingId)
+        ? {
+            ...site,
+            recordingIds: site.recordingIds.filter((id) => id !== recordingId),
+            updatedAt: timestamp,
+          }
+        : site,
+    ),
   };
 }
 
@@ -134,6 +147,7 @@ function assignRecording(
   recordingId: string,
   siteId: string,
   index?: number,
+  at = new Date(),
 ): StudyState {
   if (!state.recordings.some((recording) => recording.id === recordingId)) {
     throw new Error("Cannot place a clip that is not in the library.");
@@ -163,6 +177,7 @@ function assignRecording(
   if (blocking) {
     throw new Error(blocking.detail);
   }
+  const timestamp = at.toISOString();
   const removed = removeRecordingFromSites(state, recordingId);
   return {
     ...removed,
@@ -174,7 +189,7 @@ function assignRecording(
           : Math.max(0, Math.min(index, site.recordingIds.length));
       const recordingIds = [...site.recordingIds];
       recordingIds.splice(targetIndex, 0, recordingId);
-      return { ...site, recordingIds };
+      return { ...site, recordingIds, updatedAt: timestamp };
     }),
   };
 }
@@ -184,7 +199,9 @@ function reorderRecording(
   siteId: string,
   recordingId: string,
   direction: -1 | 1,
+  at = new Date(),
 ): StudyState {
+  const timestamp = at.toISOString();
   return {
     ...state,
     sites: state.sites.map((site) => {
@@ -200,9 +217,57 @@ function reorderRecording(
         recordingIds[targetIndex],
         recordingIds[currentIndex],
       ];
-      return { ...site, recordingIds };
+      return { ...site, recordingIds, updatedAt: timestamp };
     }),
   };
+}
+
+function applyRetentionCommand(
+  state: StudyState,
+  action: StudyAction,
+  kind: "archive" | "restore" | "requalify",
+): StudyState {
+  if (
+    action.type !== "retention/archive" &&
+    action.type !== "retention/restore" &&
+    action.type !== "retention/requalify"
+  )
+    return state;
+  // Idempotency and revision guards are enforced before touching content.
+  const disposition = commandDisposition(state, action);
+  if (disposition === "duplicate") return state;
+  if (disposition === "conflict") return rejectCommand(state, action);
+  const { category, id } = action as {
+    category: RetentionCategory;
+    id: string;
+  };
+  let next: StudyState;
+  try {
+    next =
+      kind === "archive"
+        ? archiveRetained(state, category, id)
+        : kind === "restore"
+          ? restoreRetained(state, category, id)
+          : requalifyRetained(state, category, id);
+  } catch (error) {
+    throw error instanceof Error ? error : new Error("Retention action failed.");
+  }
+  // Restoring and requalifying are custodial actions; archiving changes the
+  // content the last release was frozen against, except when only an old
+  // lineage release is being moved to the vault.
+  const invalidate =
+    kind !== "archive"
+      ? false
+      : !(
+          action.type === "retention/archive" &&
+          action.category === "release" &&
+          state.release?.id !== action.id
+        );
+  return finalizeAction(
+    invalidate ? invalidateRelease(next) : next,
+    action,
+    state.revision + 1,
+  );
 }
 
 export function workspaceReducer(
@@ -241,6 +306,12 @@ export function workspaceReducer(
           issues: withoutPlacement.issues.filter(
             (issue) => issue.recordingId !== action.recordingId,
           ),
+          importBatches: withoutPlacement.importBatches.map((batch) => ({
+            ...batch,
+            recordingIds: batch.recordingIds.filter(
+              (id) => id !== action.recordingId,
+            ),
+          })),
         }),
       );
     }
@@ -310,6 +381,12 @@ export function workspaceReducer(
       const disposition = commandDisposition(state, action);
       if (disposition === "duplicate") return state;
       if (disposition === "conflict") return rejectCommand(state, action);
+      // The record the new check supersedes moves from "current" into the
+      // local release lineage, keeping published versions resolvable.
+      const releaseLineage = [
+        ...state.releaseLineage,
+        ...(state.release ? [state.release] : []),
+      ];
       const staged = applyReadinessStage(
         state,
         action.release.readiness.ready,
@@ -322,11 +399,56 @@ export function workspaceReducer(
             lastReadinessCheck: action.release.readiness.checkedAt,
           },
           release: action.release,
+          releaseLineage,
         },
         action,
         state.revision,
       );
     }
+    case "import/create": {
+      const batch = action.batch;
+      if (state.importBatches.some((item) => item.id === batch.id))
+        return state;
+      const unknownIds = batch.recordingIds.filter(
+        (id) => !state.recordings.some((recording) => recording.id === id),
+      );
+      if (unknownIds.length)
+        throw new Error("An import batch cannot reference unknown clips.");
+      const recordings = state.recordings.map((recording) =>
+        batch.recordingIds.includes(recording.id)
+          ? { ...recording, importBatchId: batch.id }
+          : recording,
+      );
+      // Intake metadata is custodial; it does not invalidate a frozen release.
+      return mutate(
+        state,
+        action,
+        {
+          ...state,
+          importBatches: [...state.importBatches, batch],
+          recordings,
+        },
+        { invalidate: false },
+      );
+    }
+    case "import/complete":
+      return mutate(
+        state,
+        action,
+        completeImportBatch(state, action.batchId),
+        { invalidate: false },
+      );
+    case "retention/policy":
+      return mutate(state, action, {
+        ...state,
+        retentionPolicies: action.policy,
+      }, { invalidate: false });
+    case "retention/archive":
+      return applyRetentionCommand(state, action, "archive");
+    case "retention/restore":
+      return applyRetentionCommand(state, action, "restore");
+    case "retention/requalify":
+      return applyRetentionCommand(state, action, "requalify");
     case "workspace/reset":
       return action.state;
     case "workspace/sync":
