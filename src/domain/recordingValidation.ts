@@ -1,6 +1,9 @@
 import type { Recording, RecordingDraft, ValidationError } from "./models";
 import { createId, normalizeCatalogId } from "./ids";
 
+/** Open intake batch that receives clips created through the library editor. */
+export const LIVE_INTAKE_BATCH_ID = "batch-live-intake";
+
 const positive = (
   value: string,
   field: string,
@@ -75,6 +78,7 @@ export function validateRecordingDraft(
 export function recordingFromDraft(
   draft: RecordingDraft,
   existing?: Recording,
+  importBatchId?: string,
 ): Recording {
   const now = new Date().toISOString();
   return {
@@ -102,6 +106,8 @@ export function recordingFromDraft(
       .map((tag) => tag.trim())
       .filter(Boolean),
     color: draft.color,
+    importBatchId: existing?.importBatchId ?? importBatchId ?? LIVE_INTAKE_BATCH_ID,
+    restoredAt: existing?.restoredAt,
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
   };

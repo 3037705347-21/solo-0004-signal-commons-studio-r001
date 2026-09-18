@@ -11,7 +11,7 @@ import { createSeedStudy } from "./seed";
 describe("workspace persistence", () => {
   it("falls back to seed state for malformed storage", () => {
     const storage = { getItem: () => "{bad json" } as unknown as Storage;
-    expect(loadStudy(storage).version).toBe(2);
+    expect(loadStudy(storage).version).toBe(3);
   });
   it("round trips a workspace through storage", () => {
     const values = new Map<string, string>();
@@ -32,7 +32,7 @@ describe("workspace persistence", () => {
     expect(values.has(STORAGE_KEY)).toBe(false);
   });
 
-  it("migrates a version 1 workspace into the version 2 state contract", () => {
+  it("migrates a version 1 workspace into the version 3 state contract", () => {
     const legacy = createSeedStudy();
     const raw = JSON.stringify({
       ...legacy,
@@ -41,13 +41,29 @@ describe("workspace persistence", () => {
       updatedAt: undefined,
       auditLog: undefined,
       release: undefined,
+      importBatches: undefined,
+      releaseHistory: undefined,
+      archive: undefined,
     });
     const storage = { getItem: () => raw } as unknown as Storage;
     const migrated = loadStudy(storage);
-    expect(migrated.version).toBe(2);
+    expect(migrated.version).toBe(3);
     expect(migrated.revision).toBe(0);
     expect(migrated.auditLog).toEqual([]);
     expect(migrated.release).toBeNull();
+    expect(migrated.releaseHistory).toEqual([]);
+    expect(migrated.archive).toEqual([]);
+    // Legacy clips without an import batch are attached to a synthetic batch.
+    expect(migrated.importBatches.length).toBeGreaterThan(0);
+    expect(
+      migrated.recordings.every((recording) =>
+        migrated.importBatches.some(
+          (batch) => batch.id === recording.importBatchId,
+        ),
+      ),
+    ).toBe(true);
+    // Legacy sites gain timestamps.
+    expect(migrated.sites.every((site) => site.createdAt)).toBe(true);
   });
 
   it("rejects structurally valid JSON with invalid nested domain fields", () => {

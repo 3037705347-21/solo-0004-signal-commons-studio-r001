@@ -27,6 +27,7 @@ npm run check
 - `src/features/library`: searchable signal library and validated recording editor.
 - `src/features/route`: listening-site planning, placement transitions, and constraint feedback.
 - `src/features/quality`: evidence finding lifecycle, site field checklists, release gate, and snapshot export.
+- `src/features/retention`: retention policy windows, active/expired/archived classification, archive sweep and restore, and reference integrity.
 - `src/features/scenarios`: non-mutating listener scenario controls and derived metrics.
 - `src/components`: shared shell, navigation, forms, badges, metrics, dialogs, and visual primitives.
 
@@ -37,4 +38,4 @@ npm run check
 - A successful release check enables a JSON file named `signal-commons-snapshot-YYYY-MM-DD.json` containing the study, recordings, listening sites, summary metrics, and unresolved non-blocking findings.
 - Selecting a listening site on the quality desk shows a field recording checklist that can be downloaded as CSV.
 
-State-changing page actions call typed workspace commands. Commands validate at the boundary, enforce route capacity, carry revision guards, dispatch reducer events, and persist a checksummed recoverable record. Repeated commands are idempotent, stale revisions are rejected, and committed changes synchronize across tabs. Readiness checks freeze a revision, deterministic study fingerprint, and release lineage; later changes mark the frozen release stale. Derived route and scenario analysis is pure and recalculates without mutating saved data.
+State-changing page actions call typed workspace commands. Commands validate at the boundary, enforce route capacity, carry revision guards, dispatch reducer events, and persist a checksummed recoverable record. Repeated commands are idempotent, stale revisions are rejected, and committed changes synchronize across tabs. Readiness checks freeze a revision, deterministic study fingerprint, and release lineage (superseded releases move into retained history); later changes mark the frozen release stale. The retention desk archives expired publications (365 days), completed imports (180 days), unfinished imports (90 days), and disused sites (120 days) into a soft-delete vault: published versions and route/finding references keep resolving to archived objects, and restored material must pass a new readiness check to regain publication eligibility. Derived route and scenario analysis is pure and recalculates without mutating saved data.

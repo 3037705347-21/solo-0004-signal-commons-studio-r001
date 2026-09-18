@@ -2,6 +2,7 @@ import type {
   Recording,
   IssueStatus,
   ReleaseRecord,
+  RetentionKind,
   RoutePreferences,
   QualityIssue,
   StudyState,
@@ -39,6 +40,9 @@ type StudyActionPayload =
     }
   | { type: "preferences/update"; preferences: RoutePreferences }
   | { type: "project/readiness"; release: ReleaseRecord }
+  | { type: "retention/sweep" }
+  | { type: "retention/archive"; kind: RetentionKind; id: string }
+  | { type: "retention/restore"; archiveId: string }
   | { type: "workspace/reset"; state: StudyState }
   | { type: "workspace/sync"; state: StudyState };
 

@@ -23,6 +23,12 @@ export function describeAction(action: StudyAction): string {
       return action.release.readiness.ready
         ? "Marked project ready"
         : "Returned project to review";
+    case "retention/sweep":
+      return "Archived expired material under the retention policy";
+    case "retention/archive":
+      return `Archived expired ${action.kind} record`;
+    case "retention/restore":
+      return "Restored archived material for re-qualification";
     case "workspace/reset":
       return "Reset workspace to sample plan";
     case "workspace/sync":

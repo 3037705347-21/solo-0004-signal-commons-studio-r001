@@ -8,6 +8,7 @@ import type {
 } from "./models";
 import { createId } from "./ids";
 import { releaseFingerprint } from "./releaseIdentity";
+import { pendingRequalification, scanReferences } from "./retention";
 export function evaluateRelease(
   state: StudyState,
   analysis: RouteAnalysis,
@@ -21,6 +22,15 @@ export function evaluateRelease(
   const warnings = state.issues.filter(
     (issue) => issue.severity === "warning" && issue.status !== "resolved",
   );
+  const archivedReferences = scanReferences(state).filter(
+    (issue) => issue.state === "archived",
+  );
+  const missingReferences = scanReferences(state).filter(
+    (issue) => issue.state === "missing",
+  );
+  const pending = pendingRequalification(state);
+  const pendingTotal =
+    pending.recordings.length + pending.sites.length + pending.batches.length;
   if (analysis.blockingCount)
     blockers.push(
       `${analysis.blockingCount} route constraint${analysis.blockingCount === 1 ? "" : "s"} remain.`,
@@ -36,6 +46,14 @@ export function evaluateRelease(
     blockers.push(
       "The route should include arrival, texture, voice, and departure signals.",
     );
+  if (archivedReferences.length)
+    blockers.push(
+      `${archivedReferences.length} route reference${archivedReferences.length === 1 ? "" : "s"} resolve to archived material; restore or replace ${archivedReferences.length === 1 ? "it" : "them"} before release.`,
+    );
+  if (missingReferences.length)
+    blockers.push(
+      `${missingReferences.length} reference${missingReferences.length === 1 ? "" : "s"} cannot be resolved.`,
+    );
   if (analysis.warningCount)
     cautions.push(
       `${analysis.warningCount} route warning${analysis.warningCount === 1 ? "" : "s"} should be reviewed.`,
@@ -47,6 +65,10 @@ export function evaluateRelease(
   if (analysis.unplacedCount)
     cautions.push(
       `${analysis.unplacedCount} clip${analysis.unplacedCount === 1 ? "" : "s"} are not used in the route.`,
+    );
+  if (pendingTotal)
+    cautions.push(
+      `${pendingTotal} restored item${pendingTotal === 1 ? "" : "s"} await re-qualification; a passing check covers the ones used in this release.`,
     );
   const score = Math.max(
     0,

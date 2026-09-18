@@ -20,11 +20,16 @@ import {
   evaluateRelease,
   isReleaseCurrent,
 } from "../domain/releaseRules";
+import {
+  archiveRecord as archiveRecordInState,
+  sweepExpired as sweepExpiredInState,
+} from "../domain/retention";
 import type {
   Recording,
   RecordingDraft,
   IssueDraft,
   IssueStatus,
+  RetentionKind,
   RoutePreferences,
   ReleaseResult,
   Snapshot,
@@ -65,6 +70,9 @@ interface StudyContextValue {
   updatePreferences: (preferences: RoutePreferences) => void;
   checkReadiness: () => ReleaseResult;
   createSnapshot: () => CommandResult<Snapshot>;
+  sweepExpired: () => number;
+  archiveRecord: (kind: RetentionKind, id: string) => CommandResult;
+  restoreArchived: (archiveId: string) => CommandResult;
   resetStudy: () => void;
 }
 
@@ -285,6 +293,44 @@ export function StudyProvider({ children }: { children: ReactNode }) {
     };
   }, [state]);
 
+  const sweepExpiredMaterial = useCallback((): number => {
+    const { archived } = sweepExpiredInState(stateRef.current);
+    if (archived.length > 0)
+      dispatch(withCommandMeta({ type: "retention/sweep" }));
+    return archived.length;
+  }, [withCommandMeta]);
+
+  const archiveOne = useCallback(
+    (kind: RetentionKind, id: string): CommandResult => {
+      const { archived } = archiveRecordInState(stateRef.current, kind, id);
+      if (archived.length === 0)
+        return {
+          ok: false,
+          message: "This record is still within its retention period.",
+        };
+      dispatch(withCommandMeta({ type: "retention/archive", kind, id }));
+      return { ok: true };
+    },
+    [withCommandMeta],
+  );
+
+  const restoreFromArchive = useCallback(
+    (archiveId: string): CommandResult => {
+      const exists = stateRef.current.archive.some(
+        (entry) => entry.id === archiveId,
+      );
+      if (!exists)
+        return { ok: false, message: "The archived record no longer exists." };
+      dispatch(withCommandMeta({ type: "retention/restore", archiveId }));
+      return {
+        ok: true,
+        message:
+          "Restored. A readiness check is required before it can be published again.",
+      };
+    },
+    [withCommandMeta],
+  );
+
   const resetStudy = useCallback(
     () =>
       dispatch(
@@ -310,6 +356,9 @@ export function StudyProvider({ children }: { children: ReactNode }) {
       updatePreferences,
       checkReadiness,
       createSnapshot,
+      sweepExpired: sweepExpiredMaterial,
+      archiveRecord: archiveOne,
+      restoreArchived: restoreFromArchive,
       resetStudy,
     }),
     [
@@ -325,6 +374,9 @@ export function StudyProvider({ children }: { children: ReactNode }) {
       updatePreferences,
       checkReadiness,
       createSnapshot,
+      sweepExpiredMaterial,
+      archiveOne,
+      restoreFromArchive,
       resetStudy,
     ],
   );

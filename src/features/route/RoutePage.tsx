@@ -26,6 +26,8 @@ import {
   canPlaceRecording,
   getUnplacedRecordings,
 } from "../../domain/routeAnalysis";
+import { resolveRecording } from "../../domain/retention";
+import type { ResolvedRecording } from "../../domain/retention";
 import {
   formatMinutes,
   formatPercent,
@@ -46,6 +48,8 @@ export function RoutePage() {
     [state.recordings, state.sites],
   );
   const unplaced = getUnplacedRecordings(state.recordings, state.sites);
+  const resolveClip = (id: string): ResolvedRecording | null =>
+    resolveRecording(state, id);
   const place = (recording: Recording, site: Site) => {
     const recordingById = new Map(
       state.recordings.map((candidate) => [candidate.id, candidate]),
@@ -139,6 +143,7 @@ export function RoutePage() {
                   site={site}
                   index={index}
                   recordings={state.recordings}
+                  resolveClip={resolveClip}
                   analysis={analysis.sites.find(
                     (item) => item.siteId === site.id,
                   )}
@@ -244,6 +249,7 @@ function SiteLane({
   site,
   index,
   recordings,
+  resolveClip,
   analysis,
   selectedRecording,
   onSelect,
@@ -254,6 +260,7 @@ function SiteLane({
   site: Site;
   index: number;
   recordings: Recording[];
+  resolveClip: (id: string) => ResolvedRecording | null;
   analysis?: ReturnType<typeof analyzeRoute>["sites"][number];
   selectedRecording: string | null;
   onSelect?: (id: string | null) => void;
@@ -266,8 +273,8 @@ function SiteLane({
     recordings.map((recording) => [recording.id, recording]),
   );
   const placed = site.recordingIds
-    .map((id) => recordingMap.get(id))
-    .filter((recording): recording is Recording => Boolean(recording));
+    .map((id) => resolveClip(id))
+    .filter((entry): entry is ResolvedRecording => entry !== null);
   const selected = selectedRecording
     ? recordingMap.get(selectedRecording)
     : undefined;
@@ -318,8 +325,11 @@ function SiteLane({
           </span>
         </div>
         <div className="placement-list">
-          {placed.map((recording, recordingIndex) => (
-            <div className="placement-item" key={recording.id}>
+          {placed.map(({ recording, archived }, recordingIndex) => (
+            <div
+              className={`placement-item${archived ? " is-archived" : ""}`}
+              key={recording.id}
+            >
               <GripVertical size={15} className="drag-handle" />
               <RecordingGlyph color={recording.color} size="small" />
               <div className="placement-info">
@@ -327,8 +337,12 @@ function SiteLane({
                 <span>
                   {titleCase(recording.signalRole)} ·{" "}
                   {Math.round(recording.audioSpec.durationSeconds / 60)} min
+                  {archived && " · archived"}
                 </span>
               </div>
+              {archived && (
+                <Badge tone="warning">Archived — restore on retention desk</Badge>
+              )}
               <div className="placement-actions">
                 <Button
                   variant="ghost"

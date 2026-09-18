@@ -1,4 +1,5 @@
 import {
+  Archive,
   BookOpen,
   Boxes,
   ChevronRight,
@@ -12,6 +13,7 @@ import {
   SunMedium,
 } from "lucide-react";
 import { NavLink, useLocation } from "react-router-dom";
+import { isExpired } from "../domain/retention";
 import { useStudy } from "../state/StudyContext";
 import { Badge } from "./Badge";
 import { Button } from "./Button";
@@ -36,6 +38,12 @@ const navigation = [
     detail: "Findings & release",
   },
   {
+    to: "/retention",
+    label: "Retention desk",
+    icon: Archive,
+    detail: "Policy & archive",
+  },
+  {
     to: "/scenarios",
     label: "Scenario lab",
     icon: Gauge,
@@ -49,6 +57,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const active =
     navigation.find((item) => location.pathname.startsWith(item.to)) ??
     navigation[0];
+  const hasExpired = isExpired(state);
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -82,6 +91,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <strong>{label}</strong>
                 <small>{detail}</small>
               </span>
+              {to === "/retention" && hasExpired && (
+                <Badge tone="warning">expired</Badge>
+              )}
               {location.pathname.startsWith(to) && (
                 <ChevronRight size={15} className="nav-chevron" />
               )}

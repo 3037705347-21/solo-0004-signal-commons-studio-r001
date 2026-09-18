@@ -57,6 +57,7 @@ export function releaseFingerprint(state: StudyState): string {
         transcriptStatus: recording.transcriptStatus,
         consentStatus: recording.consentStatus,
         isFeatured: recording.isFeatured,
+        importBatchId: recording.importBatchId,
         tags: [...recording.tags].sort(),
         color: recording.color,
       })),

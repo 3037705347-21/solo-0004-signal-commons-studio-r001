@@ -1,5 +1,6 @@
 import { sortSites } from "./filters";
 import { formatMinutes } from "./formatters";
+import { resolveRecording } from "./retention";
 import type { IssueSeverity, IssueStatus, StudyState, Site } from "./models";
 
 export interface ChecklistFinding {
@@ -16,6 +17,8 @@ export interface SiteChecklistEntry {
   catalogId: string;
   title: string;
   durationSeconds: number;
+  /** Clip currently lives in the archive but the route reference still resolves. */
+  archived: boolean;
   unresolvedFindings: ChecklistFinding[];
 }
 
@@ -44,9 +47,6 @@ export function buildSiteChecklist(
   );
   if (!site) return null;
 
-  const recordingById = new Map(
-    state.recordings.map((recording) => [recording.id, recording]),
-  );
   const unresolved = state.issues.filter(
     (issue) => issue.status !== "resolved",
   );
@@ -73,8 +73,9 @@ export function buildSiteChecklist(
   const linkedIssueIds = new Set<string>();
   const entries: SiteChecklistEntry[] = site.recordingIds
     .map((id, index) => {
-      const recording = recordingById.get(id);
-      if (!recording) return null;
+      const resolved = resolveRecording(state, id);
+      if (!resolved) return null;
+      const { recording, archived } = resolved;
       const recordingFindings = unresolved
         .filter((issue) => issue.recordingId === recording.id)
         .map((issue) => {
@@ -85,8 +86,9 @@ export function buildSiteChecklist(
         sequence: index + 1,
         recordingId: recording.id,
         catalogId: recording.catalogId,
-        title: recording.title,
+        title: archived ? `${recording.title} (archived)` : recording.title,
         durationSeconds: recording.audioSpec.durationSeconds,
+        archived,
         unresolvedFindings: [...recordingFindings, ...siteFindings],
       };
     })

@@ -2,6 +2,12 @@ import { createId } from "../domain/ids";
 import { canPlaceRecording } from "../domain/routeAnalysis";
 import { compactLog, makeLogEntry } from "../domain/studyLog";
 import {
+  archiveRecord,
+  requalifyForRelease,
+  restoreArchived,
+  sweepExpired,
+} from "../domain/retention";
+import {
   regressReadyProject,
   transitionIssue,
   transitionProject,
@@ -119,13 +125,20 @@ function applyReadinessStage(
 function removeRecordingFromSites(
   state: StudyState,
   recordingId: string,
+  at = new Date(),
 ): StudyState {
+  const timestamp = at.toISOString();
   return {
     ...state,
-    sites: state.sites.map((site) => ({
-      ...site,
-      recordingIds: site.recordingIds.filter((id) => id !== recordingId),
-    })),
+    sites: state.sites.map((site) =>
+      site.recordingIds.includes(recordingId)
+        ? {
+            ...site,
+            recordingIds: site.recordingIds.filter((id) => id !== recordingId),
+            updatedAt: timestamp,
+          }
+        : site,
+    ),
   };
 }
 
@@ -163,7 +176,8 @@ function assignRecording(
   if (blocking) {
     throw new Error(blocking.detail);
   }
-  const removed = removeRecordingFromSites(state, recordingId);
+  const removed = removeRecordingFromSites(state, recordingId, new Date());
+  const timestamp = new Date().toISOString();
   return {
     ...removed,
     sites: removed.sites.map((site) => {
@@ -174,7 +188,7 @@ function assignRecording(
           : Math.max(0, Math.min(index, site.recordingIds.length));
       const recordingIds = [...site.recordingIds];
       recordingIds.splice(targetIndex, 0, recordingId);
-      return { ...site, recordingIds };
+      return { ...site, recordingIds, updatedAt: timestamp };
     }),
   };
 }
@@ -185,6 +199,7 @@ function reorderRecording(
   recordingId: string,
   direction: -1 | 1,
 ): StudyState {
+  const timestamp = new Date().toISOString();
   return {
     ...state,
     sites: state.sites.map((site) => {
@@ -200,7 +215,7 @@ function reorderRecording(
         recordingIds[targetIndex],
         recordingIds[currentIndex],
       ];
-      return { ...site, recordingIds };
+      return { ...site, recordingIds, updatedAt: timestamp };
     }),
   };
 }
@@ -310,22 +325,81 @@ export function workspaceReducer(
       const disposition = commandDisposition(state, action);
       if (disposition === "duplicate") return state;
       if (disposition === "conflict") return rejectCommand(state, action);
-      const staged = applyReadinessStage(
-        state,
-        action.release.readiness.ready,
-      );
+      const passing = action.release.readiness.ready;
+      const staged = applyReadinessStage(state, passing);
+      // A passing check re-qualifies restored material covered by the route.
+      const requalified = passing ? requalifyForRelease(staged) : staged;
+      // A newly frozen release supersedes the previous head; the prior
+      // publication moves into retained release lineage.
+      const releaseHistory =
+        passing && state.release
+          ? [...state.releaseHistory, state.release]
+          : state.releaseHistory;
       return finalizeAction(
         {
-          ...staged,
+          ...requalified,
           project: {
-            ...staged.project,
+            ...requalified.project,
             lastReadinessCheck: action.release.readiness.checkedAt,
           },
           release: action.release,
+          releaseHistory,
         },
         action,
         state.revision,
       );
+    }
+    case "retention/sweep": {
+      const { state: swept, archived } = sweepExpired(state);
+      if (archived.length === 0) return state;
+      const disposition = commandDisposition(state, action);
+      if (disposition === "duplicate") return state;
+      if (disposition === "conflict") return rejectCommand(state, action);
+      // Archiving only historical publications leaves the current frozen
+      // content untouched; imports/sites change the route and invalidate it.
+      const contentChanged = archived.some((entry) => entry.kind !== "release");
+      const next = contentChanged ? regressReadyProject(swept) : swept;
+      return contentChanged
+        ? finalizeAction(invalidateRelease(next), action, state.revision + 1)
+        : finalizeAction(next, action, state.revision + 1);
+    }
+    case "retention/archive": {
+      const { state: archived, archived: entries } = archiveRecord(
+        state,
+        action.kind,
+        action.id,
+      );
+      if (entries.length === 0) return state;
+      const disposition = commandDisposition(state, action);
+      if (disposition === "duplicate") return state;
+      if (disposition === "conflict") return rejectCommand(state, action);
+      // Historical-release archival leaves frozen content untouched; import
+      // and site archival changes the route and invalidates the release.
+      const contentChanged = entries.some((entry) => entry.kind !== "release");
+      const next = contentChanged ? regressReadyProject(archived) : archived;
+      return contentChanged
+        ? finalizeAction(invalidateRelease(next), action, state.revision + 1)
+        : finalizeAction(next, action, state.revision + 1);
+    }
+    case "retention/restore": {
+      const { state: restored, restored: items } = restoreArchived(
+        state,
+        action.archiveId,
+      );
+      if (items.length === 0) return state;
+      const disposition = commandDisposition(state, action);
+      if (disposition === "duplicate") return state;
+      if (disposition === "conflict") return rejectCommand(state, action);
+      // Restoring an old publication only re-adds stale lineage and never
+      // republishes it; import/site restore returns content and must
+      // re-qualify through a new readiness check.
+      const contentChanged = items.some((item) => item.kind !== "release");
+      const next = contentChanged
+        ? regressReadyProject(restored)
+        : restored;
+      return contentChanged
+        ? finalizeAction(invalidateRelease(next), action, state.revision + 1)
+        : finalizeAction(next, action, state.revision + 1);
     }
     case "workspace/reset":
       return action.state;

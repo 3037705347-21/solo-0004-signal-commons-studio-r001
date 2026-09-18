@@ -6,6 +6,12 @@ export type ConsentStatus = "pending" | "confirmed" | "restricted";
 export type IssueSeverity = "note" | "warning" | "critical";
 export type IssueStatus = "open" | "in-progress" | "resolved";
 
+export type ImportBatchStatus = "open" | "completed";
+/** Lifecycle state assigned by the executable retention policy. */
+export type RetentionStatus = "active" | "expired" | "archived";
+/** Business categories covered by the retention policy. */
+export type RetentionKind = "release" | "import" | "site";
+
 export interface AudioSpec {
   sampleRate: number;
   channels: 1 | 2;
@@ -30,8 +36,23 @@ export interface Recording {
   isFeatured: boolean;
   tags: string[];
   color: string;
+  /** Import batch that brought this clip into the study. */
+  importBatchId: string;
+  /** Set after recovery from the archive until the next passing release check. */
+  restoredAt?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ImportBatch {
+  id: string;
+  label: string;
+  status: ImportBatchStatus;
+  createdAt: string;
+  updatedAt: string;
+  completedAt?: string;
+  /** Set after recovery from the archive until the next passing release check. */
+  restoredAt?: string;
 }
 
 export interface Site {
@@ -46,6 +67,10 @@ export interface Site {
   color: string;
   sequence: number;
   recordingIds: string[];
+  createdAt: string;
+  updatedAt: string;
+  /** Set after recovery from the archive until the next passing release check. */
+  restoredAt?: string;
 }
 
 export interface QualityIssue {
@@ -92,16 +117,21 @@ export interface CommandLogEntry {
 }
 
 export interface StudyState {
-  version: 2;
+  version: 3;
   revision: number;
   updatedAt: string;
   project: FieldStudy;
   recordings: Recording[];
+  importBatches: ImportBatch[];
   sites: Site[];
   issues: QualityIssue[];
   preferences: RoutePreferences;
   auditLog: CommandLogEntry[];
+  /** Most recent release record; superseded releases move to releaseHistory. */
   release: ReleaseRecord | null;
+  releaseHistory: ReleaseRecord[];
+  /** Soft-deleted material retained so published versions and references keep resolving. */
+  archive: ArchiveEntry[];
   lastSavedAt?: string;
 }
 
@@ -223,4 +253,32 @@ export interface Snapshot {
   };
   sites: Array<Site & { recordings: Recording[] }>;
   unresolvedIssues: QualityIssue[];
+}
+
+/** A soft-deleted record retained in the archive so references keep resolving. */
+export interface ArchiveEntry {
+  id: string;
+  kind: RetentionKind;
+  archivedAt: string;
+  reason: string;
+  /** Why the retention policy marked the record expired before archival. */
+  retentionLabel: string;
+  release?: ReleaseRecord;
+  importBatch?: ImportBatch;
+  site?: Site;
+  /** Clips swept together with an import batch; resolvable by id. */
+  recordings: Recording[];
+}
+
+/** A material item classified by the retention policy for display and sweeping. */
+export interface RetentionItem {
+  kind: RetentionKind;
+  id: string;
+  label: string;
+  status: RetentionStatus;
+  categoryLabel: string;
+  updatedAt: string;
+  expiresAt?: string;
+  referenceCount: number;
+  detail: string;
 }

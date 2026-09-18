@@ -1,6 +1,37 @@
-import type { Recording, Site, StudyState } from "../domain/models";
+import type {
+  ArchiveEntry,
+  ImportBatch,
+  Recording,
+  ReleaseRecord,
+  Site,
+  Snapshot,
+  StudyState,
+} from "../domain/models";
 
 const stamp = "2026-09-08T09:00:00.000Z";
+const summerBatch: ImportBatch = {
+  id: "batch-summer-2026",
+  label: "Summer 2026 field import",
+  status: "completed",
+  createdAt: "2026-06-10T08:00:00.000Z",
+  updatedAt: "2026-07-10T16:30:00.000Z",
+  completedAt: "2026-07-10T16:30:00.000Z",
+};
+// Last touched in May and never completed: past the 90 day unfinished-import window.
+const staleBatch: ImportBatch = {
+  id: "batch-spring-leftovers",
+  label: "Spring lecture leftovers",
+  status: "open",
+  createdAt: "2026-04-18T10:00:00.000Z",
+  updatedAt: "2026-05-02T11:15:00.000Z",
+};
+const liveIntakeBatch: ImportBatch = {
+  id: "batch-live-intake",
+  label: "Current intake",
+  status: "open",
+  createdAt: "2026-09-01T08:00:00.000Z",
+  updatedAt: stamp,
+};
 const recordings: Recording[] = [
   {
     id: "rec-underpass",
@@ -25,6 +56,7 @@ const recordings: Recording[] = [
     isFeatured: true,
     tags: ["mobility", "morning", "echo"],
     color: "#d7654e",
+    importBatchId: summerBatch.id,
     createdAt: stamp,
     updatedAt: stamp,
   },
@@ -51,6 +83,7 @@ const recordings: Recording[] = [
     isFeatured: true,
     tags: ["market", "voices", "work"],
     color: "#7c6aa6",
+    importBatchId: summerBatch.id,
     createdAt: stamp,
     updatedAt: stamp,
   },
@@ -77,6 +110,7 @@ const recordings: Recording[] = [
     isFeatured: false,
     tags: ["transit", "metal", "rhythm"],
     color: "#2f7c75",
+    importBatchId: summerBatch.id,
     createdAt: stamp,
     updatedAt: stamp,
   },
@@ -103,6 +137,7 @@ const recordings: Recording[] = [
     isFeatured: true,
     tags: ["oral history", "neighborhood", "care"],
     color: "#c7903d",
+    importBatchId: summerBatch.id,
     createdAt: stamp,
     updatedAt: stamp,
   },
@@ -129,6 +164,7 @@ const recordings: Recording[] = [
     isFeatured: true,
     tags: ["water", "weather", "youth"],
     color: "#3f6fa8",
+    importBatchId: summerBatch.id,
     createdAt: stamp,
     updatedAt: stamp,
   },
@@ -155,6 +191,7 @@ const recordings: Recording[] = [
     isFeatured: false,
     tags: ["craft", "hands", "rhythm"],
     color: "#8c9474",
+    importBatchId: summerBatch.id,
     createdAt: stamp,
     updatedAt: stamp,
   },
@@ -181,6 +218,7 @@ const recordings: Recording[] = [
     isFeatured: false,
     tags: ["transit", "evening", "routine"],
     color: "#a55f72",
+    importBatchId: summerBatch.id,
     createdAt: stamp,
     updatedAt: stamp,
   },
@@ -207,8 +245,37 @@ const recordings: Recording[] = [
     isFeatured: false,
     tags: ["park", "wind", "play"],
     color: "#597b8e",
+    importBatchId: summerBatch.id,
     createdAt: stamp,
     updatedAt: stamp,
+  },
+  // Clip stuck in the unfinished, long-stale import batch.
+  {
+    id: "rec-lecture",
+    catalogId: "SC-26-104",
+    title: "Lecture hall room tone",
+    source: "Civic archive pilot",
+    recordedOn: "2026-04-25",
+    format: "WAV",
+    location: "Old lecture hall",
+    summary:
+      "Long empty-room tone captured during an abandoned indoor listening pilot.",
+    audioSpec: {
+      sampleRate: 48000,
+      channels: 1,
+      bitDepth: 24,
+      durationSeconds: 96,
+    },
+    signalRole: "texture",
+    sensitivity: "public",
+    transcriptStatus: "missing",
+    consentStatus: "pending",
+    isFeatured: false,
+    tags: ["indoor", "room-tone"],
+    color: "#8a8f98",
+    importBatchId: staleBatch.id,
+    createdAt: "2026-04-25T09:20:00.000Z",
+    updatedAt: "2026-05-02T11:15:00.000Z",
   },
 ];
 const sites: Site[] = [
@@ -225,6 +292,8 @@ const sites: Site[] = [
     color: "#d7654e",
     sequence: 0,
     recordingIds: ["rec-underpass"],
+    createdAt: stamp,
+    updatedAt: stamp,
   },
   {
     id: "site-rhythm",
@@ -239,6 +308,8 @@ const sites: Site[] = [
     color: "#7c6aa6",
     sequence: 1,
     recordingIds: ["rec-market", "rec-tram"],
+    createdAt: stamp,
+    updatedAt: stamp,
   },
   {
     id: "site-voices",
@@ -253,6 +324,8 @@ const sites: Site[] = [
     color: "#2f7c75",
     sequence: 2,
     recordingIds: ["rec-courtyard"],
+    createdAt: stamp,
+    updatedAt: stamp,
   },
   {
     id: "site-return",
@@ -265,12 +338,140 @@ const sites: Site[] = [
     hasSeating: false,
     color: "#597b8e",
     sequence: 3,
-    recordingIds: ["rec-bus"],
+    // rec-rooftop was archived with its import batch; the route reference is
+    // intentionally retained and still resolves to the archived clip.
+    recordingIds: ["rec-bus", "rec-rooftop"],
+    createdAt: stamp,
+    updatedAt: "2026-08-12T14:00:00.000Z",
+  },
+  // Empty site last touched before the 120 day disused-site window.
+  {
+    id: "site-civic-hall",
+    name: "Civic hall foyer",
+    shortLabel: "Civic hall",
+    prompt: "How does an official waiting room change the pace of listening?",
+    maxDurationSeconds: 360,
+    maxClips: 2,
+    quietSpace: true,
+    hasSeating: true,
+    color: "#9b8ec4",
+    sequence: 4,
+    recordingIds: [],
+    createdAt: "2026-02-14T09:00:00.000Z",
+    updatedAt: "2026-03-01T09:00:00.000Z",
   },
 ];
+
+// Archived winter import: cleaned up already, but one of its clips is still
+// referenced by the route and a finding, so the archive keeps it resolvable.
+const archivedRooftop: Recording = {
+  id: "rec-rooftop",
+  catalogId: "SC-25-091",
+  title: "Rooftop snowfall hush",
+  source: "Winter pilot team",
+  recordedOn: "2025-12-30",
+  format: "WAV",
+  location: "Harbor rooftop",
+  summary:
+    "Distant harbor work and muffled snowfall from a since-archived winter pilot.",
+  audioSpec: {
+    sampleRate: 48000,
+    channels: 2,
+    bitDepth: 24,
+    durationSeconds: 142,
+  },
+  signalRole: "departure",
+  sensitivity: "public",
+  transcriptStatus: "verified",
+  consentStatus: "confirmed",
+  isFeatured: false,
+  tags: ["winter", "harbor"],
+  color: "#7a93b5",
+  importBatchId: "batch-winter-pilot",
+  createdAt: "2026-01-04T10:00:00.000Z",
+  updatedAt: "2026-02-20T10:00:00.000Z",
+};
+const winterArchive: ArchiveEntry = {
+  id: "archive-winter-pilot",
+  kind: "import",
+  archivedAt: "2026-08-28T08:00:00.000Z",
+  reason: "Completed import passed its 180 day window",
+  retentionLabel: "Completed import",
+  importBatch: {
+    id: "batch-winter-pilot",
+    label: "Winter pilot import",
+    status: "completed",
+    createdAt: "2026-01-04T10:00:00.000Z",
+    updatedAt: "2026-02-20T10:00:00.000Z",
+    completedAt: "2026-02-20T10:00:00.000Z",
+  },
+  recordings: [archivedRooftop],
+};
+
+function expiredPublication(): {
+  release: ReleaseRecord;
+  snapshot: Snapshot;
+} {
+  const generatedAt = "2025-08-15T12:00:00.000Z";
+  const byId = new Map(recordings.map((recording) => [recording.id, recording]));
+  const snapshot: Snapshot = {
+    schemaVersion: 2,
+    generatedAt,
+    releaseId: "release-2025-summer",
+    releaseSequence: 1,
+    revision: 42,
+    fingerprint: "sc-r1-legacy2025",
+    project: {
+      id: "signal-commons-2025",
+      title: "Signal Commons: Harbor Winter Notes",
+      fieldArea: "Harbor district",
+      listeningQuestion: "What stays audible in the quiet season?",
+      publicationDate: "2025-09-01",
+      stage: "ready",
+      lastReadinessCheck: generatedAt,
+    },
+    preferences: { pace: "steady", accessPriority: 60, listenerCount: 5 },
+    summary: {
+      recordingCount: recordings.length,
+      siteCount: 4,
+      routeSeconds: 740,
+      readinessScore: 100,
+    },
+    sites: sites
+      .filter((site) => site.id !== "site-civic-hall")
+      .map((site) => ({
+        ...site,
+        recordingIds: site.recordingIds.filter((id) => id !== "rec-rooftop"),
+        recordings: site.recordingIds
+          .filter((id) => id !== "rec-rooftop")
+          .map((id) => byId.get(id))
+          .filter((recording): recording is Recording => Boolean(recording)),
+      })),
+    unresolvedIssues: [],
+  };
+  const release: ReleaseRecord = {
+    id: "release-2025-summer",
+    sequence: 1,
+    createdAt: generatedAt,
+    status: "ready",
+    revision: 42,
+    fingerprint: snapshot.fingerprint,
+    readiness: {
+      ready: true,
+      score: 100,
+      blockers: [],
+      cautions: [],
+      checkedAt: generatedAt,
+    },
+    snapshot,
+  };
+  return { release, snapshot };
+}
+
 export function createSeedStudy(): StudyState {
+  const { release: historicalRelease } = expiredPublication();
   return structuredClone({
-    version: 2,
+    version: 3,
     revision: 0,
     updatedAt: stamp,
     project: {
@@ -283,6 +484,7 @@ export function createSeedStudy(): StudyState {
       stage: "review",
     },
     recordings,
+    importBatches: [summerBatch, staleBatch, liveIntakeBatch],
     sites,
     issues: [
       {
@@ -310,9 +512,24 @@ export function createSeedStudy(): StudyState {
         createdAt: stamp,
         updatedAt: stamp,
       },
+      {
+        // Link still resolves even though the clip's import was archived.
+        id: "issue-rooftop-note",
+        title: "Note rooftop ending reuse",
+        description:
+          "Decide whether the archived winter pilot ending should be restored for this route.",
+        severity: "note",
+        status: "open",
+        recordingId: "rec-rooftop",
+        owner: "Milo Chen",
+        createdAt: "2026-08-30T09:00:00.000Z",
+        updatedAt: "2026-08-30T09:00:00.000Z",
+      },
     ],
     preferences: { pace: "steady", accessPriority: 70, listenerCount: 6 },
     auditLog: [],
     release: null,
+    releaseHistory: [historicalRelease],
+    archive: [winterArchive],
   });
 }
